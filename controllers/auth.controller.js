@@ -1,114 +1,169 @@
 const db = require('../models');
-const User = db.User;
-const { generateToken } = require('../utils/jwt');
+const { User } = db;
+const { generateToken, verifyToken } = require('../utils/jwt');
+const ResponseHelper = require('../src/utils/response');
+const { HTTP_STATUS, RESPONSE_MESSAGES } = require('../src/constants/response');
 
-exports.register = async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
+class AuthController {
+  static async register(req, res) {
+    try {
+      const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name, email, and password are required',
-      });
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser) {
+        return ResponseHelper.error(
+          res,
+          'Email already registered',
+          HTTP_STATUS.CONFLICT
+        );
+      }
+
+      const newUser = await User.create({ name, email, password });
+
+      const tokens = AuthController.generateUserTokens(newUser);
+
+      const responseData = {
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email
+        },
+        tokens
+      };
+
+      return ResponseHelper.success(
+        res,
+        responseData,
+        'User registered successfully',
+        HTTP_STATUS.CREATED
+      );
+    } catch (error) {
+      console.error('Register Error:', error);
+      return ResponseHelper.error(res);
     }
-
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email already registered',
-      });
-    }
-
-    const newUser = await User.create({ name, email, password });
-
-    const accessToken = generateToken({ id: newUser.id, email: newUser.email }, 'access');
-    const refreshToken = generateToken({ id: newUser.id, email: newUser.email }, 'refresh');
-
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        tokens: { accessToken, refreshToken }
-      },
-    });
-  } catch (err) {
-    console.error('Register Error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-    });
   }
-};
 
-exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+  static async login(req, res) {
+    try {
+      const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required',
-      });
+      const user = await User.scope('withPassword').findOne({ where: { email } });
+      if (!user) {
+        return ResponseHelper.error(
+          res,
+          'Invalid email or password',
+          HTTP_STATUS.UNAUTHORIZED
+        );
+      }
+
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return ResponseHelper.error(
+          res,
+          'Invalid email or password',
+          HTTP_STATUS.UNAUTHORIZED
+        );
+      }
+
+      const tokens = AuthController.generateUserTokens(user);
+
+      const responseData = {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        },
+        tokens
+      };
+
+      return ResponseHelper.success(
+        res,
+        responseData,
+        'Login successful'
+      );
+    } catch (error) {
+      console.error('Login Error:', error);
+      return ResponseHelper.error(res);
     }
-
-    const user = await User.scope('withPassword').findOne({ where: { email } });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid password',
-      });
-    }
-
-    const accessToken = generateToken({ id: user.id, email: user.email }, 'access');
-    const refreshToken = generateToken({ id: user.id, email: user.email }, 'refresh');
-
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        user: { id: user.id, name: user.name, email: user.email },
-        tokens: { accessToken, refreshToken }
-      },
-    });
-  } catch (err) {
-    console.error('Login Error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-    });
   }
-};
 
-exports.me = async (req, res) => {
-  try {
-    const user = await User.findByPk(req.user.id);
+  static async me(req, res) {
+    try {
+      const user = await User.findByPk(req.user.id);
 
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      if (!user) {
+        return ResponseHelper.error(
+          res,
+          RESPONSE_MESSAGES.ERROR.NOT_FOUND,
+          HTTP_STATUS.NOT_FOUND
+        );
+      }
+
+      return ResponseHelper.success(res, user);
+    } catch (error) {
+      console.error('Get profile error:', error);
+      return ResponseHelper.error(res);
     }
-
-    res.status(200).json({
-      success: true,
-      data: user,
-    });
-  } catch (err) {
-    console.error('Me Error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-    });
   }
+
+  static async logout(req, res) {
+    try {
+      console.log(`User ${req.user.id} logged out`);
+
+      return ResponseHelper.success(
+        res,
+        null,
+        'Logged out successfully'
+      );
+    } catch (error) {
+      console.error('Logout error:', error);
+      return ResponseHelper.error(res);
+    }
+  }
+
+  static async refreshToken(req, res) {
+    try {
+      const { refreshToken } = req.body;
+      const decoded = verifyToken(refreshToken, 'refresh');
+      if (!decoded) {
+        return ResponseHelper.error(
+          res,
+          'Invalid refresh token',
+          HTTP_STATUS.UNAUTHORIZED
+        );
+      }
+
+      const newAccessToken = generateToken(
+        { id: decoded.id, email: decoded.email },
+        'access'
+      );
+
+      return ResponseHelper.success(
+        res,
+        { accessToken: newAccessToken },
+        'Token refreshed successfully'
+      );
+    } catch (error) {
+      console.error('Refresh token error:', error);
+      return ResponseHelper.error(res);
+    }
+  }
+
+  // Helper method untuk generate tokens
+  static generateUserTokens(user) {
+    const payload = { id: user.id, email: user.email };
+    return {
+      accessToken: generateToken(payload, 'access'),
+      refreshToken: generateToken(payload, 'refresh')
+    };
+  }
+}
+
+// Export methods untuk backward compatibility
+module.exports = {
+  register: AuthController.register,
+  login: AuthController.login,
+  me: AuthController.me,
+  logout: AuthController.logout,
+  refreshToken: AuthController.refreshToken
 };

@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const categoryController = require('../controllers/category.controller');
+const CategoryController = require('../controllers/category.controller');
+const ValidationHelper = require('../src/utils/validation');
 const { authAccess } = require('../middleware/auth.middleware');
 
-router.get('/', authAccess, categoryController.getCategories);
-router.post('/', authAccess, categoryController.createCategory);
+router.use(authAccess);
+
+router.get('/', CategoryController.getCategories);
+router.post('/', ValidationHelper.validateCreateCategory, CategoryController.createCategory);
+router.put('/:id', ValidationHelper.validateCreateCategory, CategoryController.updateCategory);
+router.delete('/:id', CategoryController.deleteCategory);
 
 module.exports = router;
