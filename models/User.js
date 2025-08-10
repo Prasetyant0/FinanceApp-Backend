@@ -22,7 +22,6 @@ module.exports = (sequelize, DataTypes) => {
       attributes: { exclude: ['password'] }
     },
     scopes: {
-      // pastikan password disertakan eksplisit ketika butuh
       withPassword: {
         attributes: { include: ['password'] }
       }
@@ -50,6 +49,16 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.Budget, {
       foreignKey: 'user_id',
       as: 'budgets'
+    });
+
+    User.hasMany(models.Notification, {
+      foreignKey: 'user_id',
+      as: 'notifications'
+    });
+
+    User.hasMany(models.Reminder, {
+      foreignKey: 'user_id',
+      as: 'reminders'
     });
   };
 

@@ -1,6 +1,7 @@
 const db = require('../../models');
 const { Budget, Category, Transaction } = db;
 const { Op } = require('sequelize');
+const NotificationService = require('./notification.service');
 
 class BudgetService {
   static async createBudget(userId, budgetData) {
@@ -104,7 +105,12 @@ class BudgetService {
         is_active: true,
         start_date: { [Op.lte]: currentDate },
         end_date: { [Op.gte]: currentDate }
-      }
+      },
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['id', 'name', 'icon', 'color']
+      }]
     });
 
     const alerts = [];
@@ -123,16 +129,43 @@ class BudgetService {
 
       const newTotal = totalSpent + newTransactionAmount;
       const newPercentage = (newTotal / budget.amount) * 100;
+      const previousPercentage = (totalSpent / budget.amount) * 100;
+
+      let shouldCreateNotification = false;
+      let alertType = 'warning';
+
+      if (newTotal > budget.amount && totalSpent <= budget.amount) {
+        shouldCreateNotification = true;
+        alertType = 'exceeded';
+      } else if (newPercentage >= budget.alert_threshold && previousPercentage < budget.alert_threshold) {
+        shouldCreateNotification = true;
+        alertType = 'warning';
+      }
+
+      if (shouldCreateNotification) {
+        try {
+          await NotificationService.createBudgetAlert(
+            userId,
+            { budget, category: budget.category },
+            newTotal,
+            alertType
+          );
+        } catch (error) {
+          console.error('Failed to create budget alert notification:', error);
+        }
+      }
 
       if (newPercentage >= budget.alert_threshold) {
         alerts.push({
           budget_id: budget.id,
           category_id: budget.category_id,
+          category: budget.category,
           spent_percentage: Math.round(newPercentage * 100) / 100,
           is_over_budget: newTotal > budget.amount,
           message: newTotal > budget.amount
             ? 'Budget exceeded!'
-            : `Budget alert: ${Math.round(newPercentage)}% spent`
+            : `Budget alert: ${Math.round(newPercentage)}% spent`,
+          notification_created: shouldCreateNotification
         });
       }
     }
