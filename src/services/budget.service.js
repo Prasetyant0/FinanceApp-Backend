@@ -173,6 +173,49 @@ class BudgetService {
     return alerts;
   }
 
+  static async getBudgetDetail(userId, budgetId) {
+    const budget = await Budget.findOne({
+      where: {
+        id: budgetId,
+        user_id: userId
+      },
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['id', 'name', 'icon', 'color', 'type']
+      }]
+    });
+
+    if (!budget) {
+      return null;
+    }
+
+    // Calculate spending
+    const totalSpent = await Transaction.sum('amount', {
+      where: {
+        user_id: userId,
+        category_id: budget.category_id,
+        type: 'expense',
+        transaction_date: {
+          [Op.between]: [budget.start_date, budget.end_date]
+        }
+      }
+    }) || 0;
+
+    const remaining = budget.amount - totalSpent;
+    const spentPercentage = (totalSpent / budget.amount) * 100;
+
+    return {
+      ...budget.toJSON(),
+      spending: {
+        total_spent: totalSpent,
+        remaining: Math.max(0, remaining),
+        spent_percentage: Math.round(spentPercentage * 100) / 100,
+        is_over_budget: totalSpent > budget.amount
+      }
+    };
+  }
+
   static calculateEndDate(startDate, period) {
     const start = new Date(startDate);
 

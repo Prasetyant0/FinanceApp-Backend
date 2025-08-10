@@ -10,9 +10,14 @@ class BudgetController {
       const userId = req.user.id;
       const budget = await BudgetService.createBudget(userId, req.body);
 
+      const formattedBudget = {
+        ...budget.toJSON(),
+        amount: parseFloat(budget.amount).toFixed(2)
+      };
+
       return ResponseHelper.success(
         res,
-        budget,
+        formattedBudget,
         RESPONSE_MESSAGES.SUCCESS.CREATED,
         HTTP_STATUS.CREATED
       );
@@ -36,7 +41,16 @@ class BudgetController {
       const userId = req.user.id;
       const budgets = await BudgetService.getBudgets(userId, req.query);
 
-      return ResponseHelper.success(res, budgets);
+      const formattedBudgets = budgets.map(budget => ({
+        ...budget.toJSON(),
+        amount: parseFloat(budget.amount).toFixed(2)
+      }));
+
+      return ResponseHelper.success(
+        res,
+        formattedBudgets,
+        'Budgets retrieved successfully'
+      );
     } catch (error) {
       console.error('Get budgets error:', error);
       return ResponseHelper.error(res);
@@ -47,14 +61,9 @@ class BudgetController {
     try {
       const userId = req.user.id;
       const { id } = req.params;
+      const budgetDetail = await BudgetService.getBudgetDetail(userId, id);
 
-      const budget = await BudgetService.getBudgetWithSpending(userId, id);
-
-      return ResponseHelper.success(res, budget);
-    } catch (error) {
-      console.error('Get budget detail error:', error);
-
-      if (error.message === 'Budget not found') {
+      if (!budgetDetail) {
         return ResponseHelper.error(
           res,
           RESPONSE_MESSAGES.ERROR.NOT_FOUND,
@@ -62,6 +71,24 @@ class BudgetController {
         );
       }
 
+      // Format response untuk konsistensi
+      const formattedDetail = {
+        ...budgetDetail,
+        amount: parseFloat(budgetDetail.amount).toFixed(2),
+        spending: budgetDetail.spending ? {
+          ...budgetDetail.spending,
+          total_spent: parseFloat(budgetDetail.spending.total_spent).toFixed(2),
+          remaining: parseFloat(budgetDetail.spending.remaining).toFixed(2)
+        } : null
+      };
+
+      return ResponseHelper.success(
+        res,
+        formattedDetail,
+        'Budget detail retrieved successfully'
+      );
+    } catch (error) {
+      console.error('Get budget detail error:', error);
       return ResponseHelper.error(res);
     }
   }

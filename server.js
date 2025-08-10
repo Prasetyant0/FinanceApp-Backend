@@ -33,16 +33,21 @@ app.use((err, req, res, next) => {
     .json({ success: false, message: err.message || 'Internal Server Error' });
 });
 
-sequelize
-  .sync({ alter: true })
-  .then(() => {
-    console.log('✅ Database synced');
-    const port = process.env.PORT || 5000;
-    app.listen(port, () =>
-      console.log(`🚀 Server berjalan di port ${port}`)
-    );
-  })
-  .catch(err => {
-    console.error('❌ DB error:', err);
-    process.exit(1);
-  });
+if (process.env.NODE_ENV !== 'test') {
+  sequelize
+    .sync({ alter: true })
+    .then(() => {
+      console.log('✅ Database synced');
+      const port = process.env.PORT || 5000;
+      app.listen(port, () =>
+        console.log(`🚀 Server berjalan di port ${port}`)
+      );
+    })
+    .catch(err => {
+      console.error('❌ DB error:', err);
+      process.exit(1);
+    });
+}
+
+module.exports = app;
+
